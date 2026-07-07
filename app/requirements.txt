@@ -1,0 +1,6 @@
+fastapi==0.95.2
+uvicorn==0.22.0
+# ⚠️ INTENTIONALLY VULNERABLE: Pillow 9.0.1 has CVE-2023-44271 (uncontrolled resource consumption)
+# This is included to demonstrate Trivy SCA detection in the CI/CD pipeline
+Pillow==9.0.1
+requests==2.28.2
