@@ -1,0 +1,61 @@
+# ─────────────────────────────────────────────────────────────────
+# Custom Semgrep Rules — DevSecOps Demo
+# Author: Anthony White
+#
+# These rules extend the built-in Semgrep rule packs with
+# project-specific detection patterns.
+# ─────────────────────────────────────────────────────────────────
+
+rules:
+
+  # Rule 1: Detect SQL queries built with f-strings or % formatting
+  - id: custom-sql-injection-fstring
+    patterns:
+      - pattern: |
+          $CURSOR.execute(f"...{$VAR}...")
+      - pattern: |
+          $CURSOR.execute("..." % $VAR)
+    message: >
+      SQL Injection: Query is built using string formatting with user-controlled input '$VAR'.
+      Use parameterized queries instead: cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
+      owasp: "A03:2021 - Injection"
+      references:
+        - https://owasp.org/Top10/A03_2021-Injection/
+
+  # Rule 2: Detect hardcoded passwords or API keys
+  - id: custom-hardcoded-secret
+    patterns:
+      - pattern: |
+          $VAR = "..."
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: ".*(password|secret|api_key|token|passwd).*"
+      - metavariable-regex:
+          metavariable: "\"...\""
+          regex: ".{8,}"
+    message: >
+      Hardcoded secret detected in variable '$VAR'.
+      Use environment variables or a secrets manager (e.g., HashiCorp Vault) instead.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+
+  # Rule 3: Warn on debug mode being enabled in FastAPI/Flask
+  - id: custom-debug-mode-enabled
+    pattern: |
+      uvicorn.run(..., debug=True, ...)
+    message: >
+      Debug mode is enabled. This exposes stack traces and internal details to users.
+      Never enable debug mode in production.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-94: Improper Control of Generation of Code"
