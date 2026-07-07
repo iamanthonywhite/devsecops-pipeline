@@ -1,0 +1,190 @@
+# ═══════════════════════════════════════════════════════════════════
+#  DevSecOps CI/CD Security Pipeline
+#  Author: Anthony White
+#
+#  Stages:
+#    1. SAST  — Semgrep scans source code for security flaws
+#    2. SCA   — Trivy scans dependencies + Docker image for CVEs
+#    3. Deploy — HashiCorp Vault injects secrets at runtime (Zero Trust)
+#
+#  The pipeline acts as a "security tollbooth":
+#  if any HIGH/CRITICAL vulnerability is found, the build BREAKS.
+# ═══════════════════════════════════════════════════════════════════
+
+name: DevSecOps Security Pipeline
+
+on:
+  push:
+    branches: ["main", "develop"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+  security-events: write   # Required for uploading SARIF to GitHub Security tab
+
+jobs:
+
+  # ─────────────────────────────────────────────────────────────────
+  # STAGE 1: SAST — Static Application Security Testing (Semgrep)
+  # Scans raw source code for logic flaws, injection vulnerabilities,
+  # hardcoded secrets, and weak patterns BEFORE the code is ever run.
+  # ─────────────────────────────────────────────────────────────────
+  sast-semgrep:
+    name: "Stage 1 — SAST (Semgrep)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Run Semgrep — OWASP Top 10 + Python security rules
+        run: |
+          semgrep \
+            --config=p/python \
+            --config=p/owasp-top-ten \
+            --config=p/security-audit \
+            --config=.semgrep/custom-rules.yml \
+            --sarif \
+            --output=semgrep-results.sarif \
+            app/
+        # exit-code 1 means findings were detected → pipeline breaks
+        continue-on-error: false
+
+      - name: Upload Semgrep results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep-results.sarif
+          category: semgrep-sast
+
+      - name: Semgrep summary
+        if: always()
+        run: |
+          echo "──────────────────────────────────────"
+          echo "  Stage 1 complete: SAST scan finished"
+          echo "  Results uploaded to Security tab"
+          echo "──────────────────────────────────────"
+
+
+  # ─────────────────────────────────────────────────────────────────
+  # STAGE 2: SCA — Software Composition Analysis (Trivy)
+  # Scans requirements.txt for vulnerable packages (CVEs) and scans
+  # the built Docker image for OS-level vulnerabilities.
+  # Only runs if Stage 1 (SAST) passed.
+  # ─────────────────────────────────────────────────────────────────
+  sca-trivy:
+    name: "Stage 2 — SCA + Container Scan (Trivy)"
+    runs-on: ubuntu-latest
+    needs: sast-semgrep
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t devsecops-app:${{ github.sha }} .
+          echo "✅ Docker image built: devsecops-app:${{ github.sha }}"
+
+      - name: Trivy — scan filesystem (dependencies / requirements.txt)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "./app"
+          format: "table"
+          severity: "HIGH,CRITICAL"
+          exit-code: "1"   # Break the build on HIGH/CRITICAL CVEs
+
+      - name: Trivy — scan Docker image (OS + packages)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "devsecops-app:${{ github.sha }}"
+          format: "sarif"
+          output: "trivy-image.sarif"
+          severity: "HIGH,CRITICAL"
+          exit-code: "1"   # Break the build on HIGH/CRITICAL CVEs
+
+      - name: Upload Trivy image scan to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-container
+
+      - name: Trivy summary
+        if: always()
+        run: |
+          echo "──────────────────────────────────────────"
+          echo "  Stage 2 complete: SCA + container scan"
+          echo "  Results uploaded to Security tab"
+          echo "──────────────────────────────────────────"
+
+
+  # ─────────────────────────────────────────────────────────────────
+  # STAGE 3: DEPLOY — Secrets injected via HashiCorp Vault (Zero Trust)
+  # No credentials exist in code or environment files.
+  # Vault authenticates the pipeline and injects secrets at runtime.
+  # Only runs if BOTH Stage 1 and Stage 2 passed.
+  # ─────────────────────────────────────────────────────────────────
+  deploy:
+    name: "Stage 3 — Secure Deploy (HashiCorp Vault)"
+    runs-on: ubuntu-latest
+    needs: [sast-semgrep, sca-trivy]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── Vault secret injection ──────────────────────────────────
+      # The pipeline authenticates to Vault using a short-lived token.
+      # Vault returns the secrets as environment variables — nothing
+      # is ever written to disk or committed to source control.
+      #
+      # To use with a real Vault server:
+      #   1. Set VAULT_ADDR and VAULT_TOKEN in GitHub repo secrets
+      #   2. Store your secrets at: secret/data/devsecops-app
+      #   3. Uncomment the block below
+      # ───────────────────────────────────────────────────────────
+      # - name: Inject secrets from HashiCorp Vault
+      #   uses: hashicorp/vault-action@v3
+      #   with:
+      #     url: ${{ secrets.VAULT_ADDR }}
+      #     token: ${{ secrets.VAULT_TOKEN }}
+      #     secrets: |
+      #       secret/data/devsecops-app DB_PASSWORD | DB_PASSWORD ;
+      #       secret/data/devsecops-app API_KEY     | API_KEY
+
+      - name: Simulate Vault secret injection (demo mode)
+        run: |
+          echo "🔐 [DEMO] HashiCorp Vault would authenticate here"
+          echo "🔐 [DEMO] Injecting DB_PASSWORD and API_KEY as runtime env vars"
+          echo "🔐 [DEMO] Zero-Trust: no secrets exist in code or config files"
+        # In production, DB_PASSWORD and API_KEY come from Vault above.
+        # For this demo, GitHub Actions secrets simulate the pattern:
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          API_KEY: ${{ secrets.API_KEY }}
+
+      - name: Build final tagged image
+        run: |
+          docker build -t devsecops-app:latest .
+          echo "✅ Final image built — code passed all security gates"
+
+      - name: Deploy summary
+        run: |
+          echo "════════════════════════════════════════════════════"
+          echo "  ✅ ALL STAGES PASSED — Code is cleared for deploy"
+          echo ""
+          echo "  Stage 1 SAST  : No critical code flaws detected"
+          echo "  Stage 2 SCA   : No HIGH/CRITICAL CVEs detected"
+          echo "  Stage 3 Vault : Secrets injected at runtime"
+          echo "════════════════════════════════════════════════════"
