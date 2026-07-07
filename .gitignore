@@ -1,0 +1,25 @@
+# Never commit secrets
+.env
+*.env
+secrets.yml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+
+# Database files
+*.db
+*.sqlite3
+
+# Docker
+.dockerignore
+
+# Scan results (uploaded to GitHub Security tab instead)
+*.sarif
+semgrep-results.*
+trivy-*.json
