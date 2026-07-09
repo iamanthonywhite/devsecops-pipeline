@@ -25,6 +25,8 @@ someone stole the source code, they would get nothing useful.
 If any gate catches a critical vulnerability, the build breaks and the developer is notified immediately — before bad 
 code touches a real server or real users.
 
+Visit the "Actions" tab in this repository to see preventions live.
+
 ## Tech Stack
 - Python / FastAPI
 - Docker
