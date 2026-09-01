@@ -15,14 +15,17 @@ Every piece of code passes through three gates before it reaches production:
 ## How It Works
 
 **Gate 1 — Semgrep (SAST)**
+*SAST (Static Application Security Testing) analyzes source code without running it, catching flaws early in development.*
 Reads your source code line by line looking for dangerous patterns — SQL injection, hardcoded passwords, weak logic.
 It flags the vulnerable endpoint in `app/main.py` before the app ever runs.
 
 **Gate 2 — Trivy (SCA)**
+*SCA (Software Composition Analysis) scans third-party dependencies and container images for known vulnerabilities, rather than your own code.*
 Checks every package and dependency against a database of known CVEs. It catches outdated or vulnerable
 libraries in `requirements.txt` and scans the Docker image for OS-level flaws.
 
 **Gate 3 — HashiCorp Vault (Secrets Management)**
+*Vault is a secrets management tool that stores and injects credentials at runtime, so nothing sensitive is ever hardcoded or stored in source control.*
 Ensures no passwords or API keys are hardcoded in the code. In a production deployment, secrets would be
 injected at runtime via a live Vault server — so even if someone stole the source code, they would get
 nothing useful. For this project, the Vault integration is scaffolded and documented in the workflow file,
